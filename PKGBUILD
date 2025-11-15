@@ -1,8 +1,9 @@
 # Maintainer: xtexecute <none@none>
-pkgname=fleshfetch-aur
+
+pkgname=fleshfetch
 pkgver=1.0.0
 pkgrel=1
-pkgdesc="A GTK4-based clicker game written in Python with global Supabase leaderboard, written as a joke.. don't take it too seriously."
+pkgdesc="GTK4-based clicker game in Python with global Supabase leaderboard. Written as a joke — don't take it too seriously."
 arch=('x86_64')
 url="https://github.com/xtexecute/fleshfetch-aur"
 license=('MIT')
@@ -13,13 +14,22 @@ sha256sums=('SKIP')
 package() {
     cd "$srcdir/fleshfetch-aur"
 
-    # install
+    # Main app
     install -Dm644 fleshfetch.py "$pkgdir/usr/share/fleshfetch/fleshfetch.py"
-    install -Dm644 flesh1.png "$pkgdir/usr/share/fleshfetch/flesh1.png"
     install -Dm755 fleshfetch "$pkgdir/usr/bin/fleshfetch"
 
-    # config
-    install -Dm644 default.conf "$pkgdir/etc/fleshfetch/config"
+    # Default config (read-only template)
+    install -Dm644 default.conf "$pkgdir/usr/share/fleshfetch/default.conf"
+
+    # Icon (rename to match AppID)
+    install -Dm644 flesh1.png \
+        "$pkgdir/usr/share/icons/hicolor/256x256/apps/dev.xtexecute.fleshfetch.png"
+
+    # Desktop entry
+    install -Dm644 dev.xtexecute.fleshfetch.desktop \
+        "$pkgdir/usr/share/applications/dev.xtexecute.fleshfetch.desktop"
+
+    # License
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
 
-# vim:set ts=2 sw=2 et:
