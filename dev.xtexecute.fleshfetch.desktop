@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=FleshFetch
+Comment=Flesh-based clicker game
+Exec=fleshfetch
+Icon=dev.xtexecute.fleshfetch
+Terminal=false
+Categories=Game;
