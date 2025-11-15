@@ -18,12 +18,11 @@ package() {
     install -Dm644 fleshfetch.py "$pkgdir/usr/share/fleshfetch/fleshfetch.py"
     install -Dm755 fleshfetch "$pkgdir/usr/bin/fleshfetch"
 
-    # Default config (read-only template)
+    # Default config
     install -Dm644 default.conf "$pkgdir/usr/share/fleshfetch/default.conf"
 
-    # Icon (rename to match AppID)
-    install -Dm644 fleshicon.png \
-        "$pkgdir/usr/share/icons/hicolor/256x256/apps/dev.xtexecute.fleshfetch.png"
+    # Place flesh.png next to fleshfetch.py
+    install -Dm644 flesh.png "$pkgdir/usr/share/fleshfetch/flesh.png"
 
     # Desktop entry
     install -Dm644 dev.xtexecute.fleshfetch.desktop \
@@ -32,4 +31,3 @@ package() {
     # License
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
-
