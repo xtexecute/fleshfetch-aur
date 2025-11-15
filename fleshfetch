@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+import sys
+import os
+
+# Path where the Python script is installed
+script = "/usr/share/fleshfetch/fleshfetch.py"
+
+os.execv(sys.executable, [sys.executable, script])
