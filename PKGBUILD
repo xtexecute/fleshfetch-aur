@@ -3,7 +3,7 @@
 pkgname=fleshfetch
 pkgver=1.0.0
 pkgrel=1
-pkgdesc="GTK4-based clicker game in Python with global Supabase leaderboard. Written as a joke — don't take it too seriously."
+pkgdesc="GTK4-based clicker game in Python with global Supabase leaderboard. Written as a joke, don't take it too seriously."
 arch=('x86_64')
 url="https://github.com/xtexecute/fleshfetch-aur"
 license=('MIT')
@@ -22,7 +22,7 @@ package() {
     install -Dm644 default.conf "$pkgdir/usr/share/fleshfetch/default.conf"
 
     # Icon (rename to match AppID)
-    install -Dm644 flesh1.png \
+    install -Dm644 fleshicon.png \
         "$pkgdir/usr/share/icons/hicolor/256x256/apps/dev.xtexecute.fleshfetch.png"
 
     # Desktop entry
