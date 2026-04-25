@@ -321,9 +321,13 @@ class FleshClicker(Gtk.Window):
         .flesh-picture {
             border-radius: 12px;
         }
+        @keyframes squish-anim {
+            0%   { transform: scale(1.0); }
+            40%  { transform: scale(0.94); }
+            100% { transform: scale(1.0); }
+        }
         .flesh-picture.squish {
-            transform: scale(0.94);
-            transition: transform 80ms ease-out;
+            animation: squish-anim 100ms ease-out forwards;
         }
         .upgrade-row {
             padding: 6px;
@@ -406,7 +410,7 @@ class FleshClicker(Gtk.Window):
         return base + self.compute_extra_fpc()
 
     def on_filter_clicked(self, button, category_key):
-        """Switch upgrade filter and rebuild list."""
+        """Switch upgrade filter and rebuild the visible upgrade list."""
         self.current_filter = category_key
         self.refresh_upgrades_ui()
 
@@ -774,13 +778,26 @@ class FleshClicker(Gtk.Window):
     def refresh_upgrades_ui(self):
         if not hasattr(self, "upgrades_listbox"):
             return
+
         self.clear_box_children(self.upgrades_listbox)
 
-        for uid, u in self.upgrades.items():
-            cat = u.get("category", "misc")
+        selected_filter = getattr(self, "current_filter", "all")
 
-            # simple filter; could store current filter on self
-            # for now, always show all
+        # Make the currently selected filter button visually stand out.
+        if hasattr(self, "upgrade_filter_buttons"):
+            for key, btn in self.upgrade_filter_buttons.items():
+                if key == selected_filter:
+                    btn.add_css_class("suggested-action")
+                else:
+                    btn.remove_css_class("suggested-action")
+
+        for uid, u in self.upgrades.items():
+            cat = u.get("category") or u.get("type") or "misc"
+
+            # "All" shows everything. "Click" and "Auto" only show matching upgrades.
+            if selected_filter != "all" and cat != selected_filter:
+                continue
+
             row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
             row.add_css_class("upgrade-row")
 
@@ -807,6 +824,7 @@ class FleshClicker(Gtk.Window):
             row.append(btn)
 
             self.upgrades_listbox.append(row)
+
     def refresh_achievements_ui(self):
         if not hasattr(self, "achievements_listbox"):
             return
@@ -877,9 +895,24 @@ class FleshClicker(Gtk.Window):
         self.refresh_upgrades_ui()
         self.update_labels()
 
+
+    def play_squish(self):
+        self.picture.remove_css_class("squish")
+
+        duration = int(self.settings.get("squish_ms", 100))
+
+        def do_squish():
+            self.picture.add_css_class("squish")
+            GLib.timeout_add(duration, lambda: (self.picture.remove_css_class("squish"), False)[1])
+            return False
+
+        GLib.idle_add(do_squish)
+
     # ---------- CLICK HANDLER ----------
 
     def on_click(self, gesture, n_press, x, y):
+        self.play_squish()
+
         # flesh gain logic
         fpc = self.effective_fpc()
 
