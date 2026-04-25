@@ -1,6 +1,9 @@
 # FleshFetch
-GTK4-based clicker game written in Python. Includes autosave, upgrades, achievements, and a global Supabase leaderboard.
-I made this as a joke. Please don't take this too seriously.
+GTK4-based clicker game written in Python. Includes a bunch of stuff. I am too lazy to list all of it but you can mod the game pretty easily. This is a joke, if you couldn't tell.
+
+This game is in **BETA**!!!!
+PLEASE WRITE ALL BUGS IN ISSUES
+WINDOWS PORT IS GONNA BE RELEASED SOON
 
 ## Run
 fleshfetch
