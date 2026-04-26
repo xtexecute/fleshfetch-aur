@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 import os
+os.environ["GDK_SCALE"] = "1"
+os.environ["GDK_DPI_SCALE"] = "1"
+os.environ["GTK_THEME"] = "Adwaita"
+import sys
 import json
 import time
 import random
@@ -21,33 +25,35 @@ except Exception:
 
 APP_ID = "dev.xtexecute.fleshfetch"
 
-# Base directory of the installed code (assets live here)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# ---------- PATHS ----------
+if getattr(sys, "frozen", False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# XDG config directory for user-writable save data (for packaging / AUR)
-XDG_CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
-CONFIG_DIR = os.path.join(XDG_CONFIG_HOME, "fleshfetch")
+if os.name == "nt":
+    CONFIG_DIR = os.path.join(
+        os.environ.get("APPDATA", os.path.expanduser("~")), "fleshfetch"
+    )
+else:
+    _xdg = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    CONFIG_DIR = os.path.join(_xdg, "fleshfetch")
 
-# Ensure config dir exists so saves don't fail when installed system-wide
 os.makedirs(CONFIG_DIR, exist_ok=True)
 
-# New save locations (user-writable)
-STATE_FILE = os.path.join(CONFIG_DIR, "state.json")
-SETTINGS_FILE = os.path.join(CONFIG_DIR, "settings.json")
+STATE_FILE        = os.path.join(CONFIG_DIR, "state.json")
+SETTINGS_FILE     = os.path.join(CONFIG_DIR, "settings.json")
 ACHIEVEMENTS_FILE = os.path.join(CONFIG_DIR, "achievements.json")
-COUNTER_FILE = os.path.join(CONFIG_DIR, "flesh_counter.txt")
+COUNTER_FILE      = os.path.join(CONFIG_DIR, "flesh_counter.txt")
 
-# Legacy file locations (pre-AUR, next to the script)
-LEGACY_STATE_FILE = os.path.join(BASE_DIR, "state.json")
-LEGACY_SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
+LEGACY_STATE_FILE        = os.path.join(BASE_DIR, "state.json")
+LEGACY_SETTINGS_FILE     = os.path.join(BASE_DIR, "settings.json")
 LEGACY_ACHIEVEMENTS_FILE = os.path.join(BASE_DIR, "achievements.json")
-LEGACY_COUNTER_FILE = os.path.join(BASE_DIR, "flesh_counter.txt")
+LEGACY_COUNTER_FILE      = os.path.join(BASE_DIR, "flesh_counter.txt")
 
-# Mods: system-wide (next to code) and per-user (in config dir)
 SYSTEM_MODS_DIR = os.path.join(BASE_DIR, "mods")
-USER_MODS_DIR = os.path.join(CONFIG_DIR, "mods")
+USER_MODS_DIR   = os.path.join(CONFIG_DIR, "mods")
 
-# Make sure user mods dir exists so players can drop files in
 os.makedirs(USER_MODS_DIR, exist_ok=True)
 
 DEFAULT_SETTINGS = {
@@ -58,86 +64,95 @@ DEFAULT_SETTINGS = {
 }
 
 DEFAULT_STATE = {
-    "flesh": 0.0,
+    "currencies": {"flesh": 0.0},
     "flesh_per_click": 1.0,
     "upgrades_owned": {},
     "total_clicks": 0,
 }
 
 DEFAULT_ACHIEVEMENTS = {
-    "first_click": {"name": "First Click", "desc": "Click the flesh at least once.", "unlocked": False},
-    "ten_clicks": {"name": "Ten Clicks", "desc": "Click the flesh 10 times.", "unlocked": False},
-    "hundred_clicks": {"name": "Hundred Clicks", "desc": "Click the flesh 100 times.", "unlocked": False},
-    "first_upgrade": {"name": "First Upgrade", "desc": "Buy your first upgrade.", "unlocked": False},
-    "five_upgrades": {"name": "Upgrade Collector", "desc": "Own at least 5 upgrades total.", "unlocked": False},
-    "hundred_flesh": {"name": "Flesh Pile", "desc": "Reach 100 flesh.", "unlocked": False},
-    "thousand_flesh": {"name": "Flesh Mountain", "desc": "Reach 1000 flesh.", "unlocked": False},
+    "first_click":    {"name": "First Click",      "desc": "Click the flesh at least once.",  "unlocked": False},
+    "ten_clicks":     {"name": "Ten Clicks",        "desc": "Click the flesh 10 times.",       "unlocked": False},
+    "hundred_clicks": {"name": "Hundred Clicks",    "desc": "Click the flesh 100 times.",      "unlocked": False},
+    "first_upgrade":  {"name": "First Upgrade",     "desc": "Buy your first upgrade.",         "unlocked": False},
+    "five_upgrades":  {"name": "Upgrade Collector", "desc": "Own at least 5 upgrades total.",  "unlocked": False},
+    "hundred_flesh":  {"name": "Flesh Pile",        "desc": "Reach 100 flesh.",                "unlocked": False},
+    "thousand_flesh": {"name": "Flesh Mountain",    "desc": "Reach 1000 flesh.",               "unlocked": False},
 }
 
-# Base upgrades: id -> data
-# type: "click" (adds flesh per click), "auto" (adds flesh per second), etc.
+# ---------- CURRENCY REGISTRY ----------
+# Built-in currencies. Mods add more via game.register_currency().
+BASE_CURRENCIES = {
+    "flesh": {"display_name": "Flesh"},
+}
+
+# ---------- UPGRADE SCHEMA ----------
+# Each upgrade defines:
+#   base_cost, cost_mult       — scaling cost
+#   cost_currency              — which currency is spent (default: "flesh")
+#   currency_effects: list of:
+#       currency   — registry name of the currency affected
+#       cpc        — added to click gain per upgrade owned
+#       cps        — added to per-second gain per upgrade owned
+#       on_buy     — granted once when the upgrade is purchased
+#
+# Legacy fps/fpc keys are still accepted transparently.
+
 BASE_UPGRADES = {
     "bigger_clicks": {
         "name": "Bigger Clicks",
         "desc": "+1 flesh per click.",
-        "type": "click",
         "category": "click",
-        "base_cost": 10,
-        "cost_mult": 1.15,
-        "fps": 0.0,
-        "fpc": 1.0
+        "base_cost": 10, "cost_mult": 1.15,
+        "cost_currency": "flesh",
+        "currency_effects": [
+            {"currency": "flesh", "cpc": 1.0, "cps": 0.0, "on_buy": 0.0},
+        ],
     },
     "auto_clicker_1": {
         "name": "Autoclicker Mk.I",
         "desc": "+1 flesh/sec per unit.",
-        "type": "auto",
         "category": "auto",
-        "base_cost": 25,
-        "cost_mult": 1.15,
-        "fps": 1.0,
-        "fpc": 0.0
+        "base_cost": 25, "cost_mult": 1.15,
+        "cost_currency": "flesh",
+        "currency_effects": [
+            {"currency": "flesh", "cpc": 0.0, "cps": 1.0, "on_buy": 0.0},
+        ],
     },
     "auto_clicker_2": {
         "name": "Autoclicker Mk.II",
         "desc": "+2 flesh/sec per unit.",
-        "type": "auto",
         "category": "auto",
-        "base_cost": 100,
-        "cost_mult": 1.18,
-        "fps": 2.0,
-        "fpc": 0.0
+        "base_cost": 100, "cost_mult": 1.18,
+        "cost_currency": "flesh",
+        "currency_effects": [
+            {"currency": "flesh", "cpc": 0.0, "cps": 2.0, "on_buy": 0.0},
+        ],
     },
     "crit_click": {
         "name": "Critical Clicks",
         "desc": "Chance for double flesh per click.",
-        "type": "click",
         "category": "click",
-        "base_cost": 200,
-        "cost_mult": 1.2,
-        "fps": 0.0,
-        "fpc": 0.0
+        "base_cost": 200, "cost_mult": 1.2,
+        "cost_currency": "flesh",
+        "currency_effects": [],  # handled specially in on_click crit logic
     },
 }
 
 
-def load_json(path, default, legacy_path=None):
-    """Load JSON from *path*; optionally fall back to *legacy_path*.
+# ---------- JSON HELPERS ----------
 
-    This lets us migrate old saves that used to live next to the script
-    into the new XDG config directory without breaking older installs.
-    """
+def load_json(path, default, legacy_path=None):
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return default.copy()
-
     if legacy_path and os.path.exists(legacy_path):
         try:
             with open(legacy_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            # Try to migrate into the new location
             try:
                 save_json(path, data)
             except Exception:
@@ -145,8 +160,8 @@ def load_json(path, default, legacy_path=None):
             return data
         except Exception:
             return default.copy()
-
     return default.copy()
+
 
 def save_json(path, data):
     try:
@@ -158,11 +173,6 @@ def save_json(path, data):
 
 
 def load_legacy_counter():
-    """Read the flat text counter used by earlier versions.
-
-    We first prefer the new COUNTER_FILE in CONFIG_DIR (current saves),
-    then fall back to the legacy file next to the script.
-    """
     for p in (COUNTER_FILE, LEGACY_COUNTER_FILE):
         if os.path.exists(p):
             try:
@@ -182,25 +192,24 @@ def save_legacy_counter(value):
         pass
 
 
-
 # ---------- LEADERBOARD / SUPABASE HELPERS ----------
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+SUPABASE_URL               = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY               = os.environ.get("SUPABASE_KEY", "")
 SUPABASE_LEADERBOARD_TABLE = os.environ.get("SUPABASE_LEADERBOARD_TABLE", "leaderboard")
 
 
 def get_default_username() -> str:
-    """Best-effort OS username detection.
-
-    Tries os.getlogin(); if that fails (Wayland / flatpak sandbox),
-    falls back to the leaf folder name of $HOME. """
     try:
         return os.getlogin()
     except Exception:
-        home = os.path.expanduser("~")
-        name = os.path.basename(home.rstrip(os.sep))
-        return name or "unknown"
+        pass
+    if os.name == "nt":
+        name = os.environ.get("USERNAME", "")
+        if name:
+            return name
+    home = os.path.expanduser("~")
+    return os.path.basename(home.rstrip(os.sep)) or "unknown"
 
 
 def _leaderboard_configured() -> bool:
@@ -208,12 +217,8 @@ def _leaderboard_configured() -> bool:
 
 
 def submit_leaderboard_entry(username: str, flesh_amount: int):
-    """Send a single row to the Supabase leaderboard table.
-
-    Returns (ok: bool, info: str | dict). """
     if not _leaderboard_configured():
         return False, "SUPABASE_URL / SUPABASE_KEY not configured in environment"
-
     url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/{SUPABASE_LEADERBOARD_TABLE}"
     headers = {
         "apikey": SUPABASE_KEY,
@@ -221,20 +226,13 @@ def submit_leaderboard_entry(username: str, flesh_amount: int):
         "Content-Type": "application/json",
         "Prefer": "return=representation",
     }
-    payload = {
-        "username": username,
-        "flesh_amount": int(flesh_amount),
-    }
+    payload = {"username": username, "flesh_amount": int(flesh_amount)}
     try:
         resp = requests.post(url, headers=headers, json=payload, timeout=10)
     except Exception as e:
         return False, f"Request error: {e}"
-
     if resp.status_code not in (200, 201):
-        # include a short prefix of the body for debugging
-        body = resp.text[:200]
-        return False, f"HTTP {resp.status_code}: {body}"
-
+        return False, f"HTTP {resp.status_code}: {resp.text[:200]}"
     try:
         data = resp.json()
     except Exception:
@@ -243,13 +241,8 @@ def submit_leaderboard_entry(username: str, flesh_amount: int):
 
 
 def fetch_leaderboard_entries():
-    """Fetch all leaderboard rows ordered by flesh_amount descending.
-
-    Returns (ok: bool, error: str, rows: list[dict]). """
     if not _leaderboard_configured():
         return False, "SUPABASE_URL / SUPABASE_KEY not configured in environment", []
-
-    # order by flesh_amount desc; Supabase uses this query syntax.
     url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/{SUPABASE_LEADERBOARD_TABLE}?select=*&order=flesh_amount.desc"
     headers = {
         "apikey": SUPABASE_KEY,
@@ -259,19 +252,16 @@ def fetch_leaderboard_entries():
         resp = requests.get(url, headers=headers, timeout=10)
     except Exception as e:
         return False, f"Request error: {e}", []
-
     if resp.status_code != 200:
-        body = resp.text[:200]
-        return False, f"HTTP {resp.status_code}: {body}", []
-
+        return False, f"HTTP {resp.status_code}: {resp.text[:200]}", []
     try:
         rows = resp.json()
     except Exception as e:
         return False, f"JSON decode error: {e}", []
-
     if not isinstance(rows, list):
         return False, "Unexpected response format", []
     return True, "", rows
+
 
 # ---------- MAIN WINDOW ----------
 
@@ -280,15 +270,13 @@ class FleshClicker(Gtk.Window):
         super().__init__(title="Flesh Clicker")
         self.set_default_size(900, 600)
         self.set_application(app)
-
         self.app = app
 
-        # data
+        # ---------- load saved data ----------
         self.settings     = load_json(SETTINGS_FILE,     DEFAULT_SETTINGS,     legacy_path=LEGACY_SETTINGS_FILE)
         self.state        = load_json(STATE_FILE,        DEFAULT_STATE,        legacy_path=LEGACY_STATE_FILE)
         self.achievements = load_json(ACHIEVEMENTS_FILE, DEFAULT_ACHIEVEMENTS, legacy_path=LEGACY_ACHIEVEMENTS_FILE)
 
-        # ensure keys exist
         for k, v in DEFAULT_SETTINGS.items():
             self.settings.setdefault(k, v)
         for k, v in DEFAULT_STATE.items():
@@ -296,31 +284,50 @@ class FleshClicker(Gtk.Window):
                 self.state[k] = v
         if "upgrades_owned" not in self.state:
             self.state["upgrades_owned"] = {}
+
+        # migrate legacy flat "flesh" float -> currencies dict
+        if "flesh" in self.state and not isinstance(self.state.get("currencies"), dict):
+            self.state["currencies"] = {"flesh": float(self.state.pop("flesh", 0.0))}
+        if "currencies" not in self.state:
+            self.state["currencies"] = {"flesh": 0.0}
+
         for k, v in DEFAULT_ACHIEVEMENTS.items():
             if k not in self.achievements:
                 self.achievements[k] = v
 
-        # if starting from very old version, sync flesh with legacy counter
-        if self.state["flesh"] == 0:
+        # sync flesh with legacy counter if starting fresh
+        if self.state["currencies"].get("flesh", 0.0) == 0:
             legacy = load_legacy_counter()
             if legacy > 0:
-                self.state["flesh"] = legacy
+                self.state["currencies"]["flesh"] = float(legacy)
 
-        self.upgrades = dict(BASE_UPGRADES)  # mods can add more
+        # ---------- registries ----------
+        self.currencies = dict(BASE_CURRENCIES)
+        self.upgrades   = dict(BASE_UPGRADES)
 
-        # track time for RPC
-        self.start_time = int(time.time())
+        # primary currency: used for base per-click gain and legacy counter
+        self.primary_currency = "flesh"
+
+        # mods can override this to change the clickable image
+        self.flesh_image_path = os.path.join(BASE_DIR, "flesh.png")
+
+        self.start_time      = int(time.time())
         self.rpc_last_update = 0
-        self.rpc = None
+        self.rpc             = None
 
-        # CSS / style
+        # ---------- CSS ----------
         css = """
-        window {
+        window, headerbar, .titlebar {
             background-color: #151515;
+            color: #dddddd;
+            border: none;
         }
-        .flesh-picture {
-            border-radius: 12px;
+        decoration {
+            background-color: #151515;
+            border: none;
+            box-shadow: none;
         }
+        .flesh-picture { border-radius: 12px; }
         @keyframes squish-anim {
             0%   { transform: scale(1.0); }
             40%  { transform: scale(0.94); }
@@ -329,55 +336,112 @@ class FleshClicker(Gtk.Window):
         .flesh-picture.squish {
             animation: squish-anim 100ms ease-out forwards;
         }
-        .upgrade-row {
-            padding: 6px;
+        .upgrade-row    { padding: 6px; }
+        .achievement-row { padding: 4px; }
+        .badge-unlocked { color: #a6e3a1; }
+        .badge-locked   { color: #f38ba8; }
+        label { color: #dddddd; }
+        scrolledwindow, viewport, box { background-color: #151515; }
+        notebook { background-color: #151515; }
+        notebook > header {
+            background-color: #1a1a1a;
+            border-bottom: 1px solid #333;
         }
-        .achievement-row {
-            padding: 4px;
+        notebook > header > tabs > tab {
+            background-color: #1a1a1a;
+            color: #aaaaaa;
+            padding: 4px 12px;
+            border: none;
         }
-        .badge-unlocked {
-            color: #a6e3a1;
+        notebook > header > tabs > tab:checked {
+            background-color: #252525;
+            color: #ffffff;
+            border-bottom: 2px solid #4a9eff;
         }
-        .badge-locked {
-            color: #f38ba8;
+        button, button * {
+            background-color: #252525;
+            background-image: none;
+            color: #dddddd;
+            border: 1px solid #333333;
+            border-radius: 4px;
+            padding: 4px 8px;
+            box-shadow: none;
+            text-shadow: none;
         }
+        button:hover, button:hover * {
+            background-color: #2e2e2e;
+            background-image: none;
+            border-color: #404040;
+        }
+        button:active, button:active * {
+            background-color: #1e1e1e;
+            background-image: none;
+        }
+        button.suggested-action, button.suggested-action * {
+            background-color: #1c5a8a;
+            background-image: none;
+            border-color: #1c5a8a;
+            color: #ffffff;
+        }
+        button.suggested-action:hover, button.suggested-action:hover * {
+            background-color: #1c6ea4;
+            background-image: none;
+        }
+        textview, textview > text { background-color: #1a1a1a; color: #dddddd; }
+        entry {
+            background-color: #1a1a1a;
+            color: #dddddd;
+            border: 1px solid #333333;
+            border-radius: 4px;
+        }
+        spinbutton { background-color: #1a1a1a; color: #dddddd; border: 1px solid #333333; }
+        paned { background-color: #151515; }
+        paned > separator { background-color: #2a2a2a; min-width: 1px; min-height: 1px; }
+        scrolledwindow { border: none; outline: none; }
+        scrolledwindow undershoot, scrolledwindow overshoot { background: none; }
+        frame { border: none; outline: none; }
+        frame > border { border: none; }
+        grid { background-color: #151515; border: none; }
+        notebook > stack { border: none; background-color: #151515; }
         """
         provider = Gtk.CssProvider()
-        provider.load_from_data(css.encode("utf-8"))
+        provider.load_from_string(css)
         display = Gdk.Display.get_default()
         Gtk.StyleContext.add_provider_for_display(
             display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
 
-        # load mods
+        # load mods before building UI so they can register currencies/upgrades/textures
         self.load_mods()
-
-        # init UI
         self.build_ui()
         self.update_labels()
 
-        # auto-timer
         GLib.timeout_add(1000, self.on_timer_tick)
 
-        # RPC
         if RPC_AVAILABLE and self.settings.get("enable_rpc") and self.settings.get("discord_client_id"):
             self.init_rpc()
             GLib.timeout_add(2000, self.tick_rpc_update)
 
-    # ---------- DATA / STATS ----------
+    # ---------- CURRENCY HELPERS ----------
 
+    def get_currency(self, registry_name: str) -> float:
+        return float(self.state["currencies"].get(registry_name, 0.0))
+
+    def set_currency(self, registry_name: str, value: float):
+        self.state["currencies"][registry_name] = max(0.0, float(value))
+        save_json(STATE_FILE, self.state)
+        if registry_name == self.primary_currency:
+            save_legacy_counter(self.state["currencies"][registry_name])
+
+    def add_currency(self, registry_name: str, amount: float):
+        self.set_currency(registry_name, self.get_currency(registry_name) + amount)
+
+    # legacy property so leaderboard code keeps working
     @property
     def flesh(self) -> float:
-        return self.state["flesh"]
+        return self.get_currency(self.primary_currency)
 
-    @flesh.setter
-    def flesh(self, value: float):
-        self.state["flesh"] = max(0.0, float(value))
-        save_json(STATE_FILE, self.state)
-        save_legacy_counter(self.state["flesh"])
-
-    def add_flesh(self, amount: float):
-        self.flesh = self.flesh + amount
+    # ---------- UPGRADE HELPERS ----------
 
     def get_upgrade_count(self, uid: str) -> int:
         return int(self.state["upgrades_owned"].get(uid, 0))
@@ -389,32 +453,53 @@ class FleshClicker(Gtk.Window):
     def total_upgrades_owned(self) -> int:
         return sum(self.state["upgrades_owned"].values())
 
-    def compute_fps(self) -> float:
-        fps = 0.0
-        for uid, u in self.upgrades.items():
-            if u.get("type") == "auto":
-                count = self.get_upgrade_count(uid)
-                fps += u.get("fps", 0.0) * count
-        return fps
+    def get_upgrade_cost(self, uid: str, owned: int) -> float:
+        u = self.upgrades[uid]
+        return u["base_cost"] * (u["cost_mult"] ** owned)
 
-    def compute_extra_fpc(self) -> float:
-        extra = 0.0
-        for uid, u in self.upgrades.items():
-            if u.get("type") == "click":
-                count = self.get_upgrade_count(uid)
-                extra += u.get("fpc", 0.0) * count
-        return extra
+    def _get_effects(self, uid: str) -> list:
+        """Return currency_effects list; falls back to legacy fps/fpc keys."""
+        u = self.upgrades[uid]
+        if "currency_effects" in u:
+            return u["currency_effects"]
+        effects = []
+        fpc = u.get("fpc", 0.0)
+        fps = u.get("fps", 0.0)
+        if fpc or fps:
+            effects.append({"currency": "flesh", "cpc": fpc, "cps": fps, "on_buy": 0.0})
+        return effects
+
+    def compute_cps(self, currency: str) -> float:
+        """Total per-second gain for a currency from all owned upgrades."""
+        total = 0.0
+        for uid in self.upgrades:
+            count = self.get_upgrade_count(uid)
+            if not count:
+                continue
+            for effect in self._get_effects(uid):
+                if effect.get("currency") == currency:
+                    total += effect.get("cps", 0.0) * count
+        return total
+
+    def compute_cpc(self, currency: str) -> float:
+        """Total per-click gain for a currency from all owned upgrades."""
+        total = 0.0
+        for uid in self.upgrades:
+            count = self.get_upgrade_count(uid)
+            if not count:
+                continue
+            for effect in self._get_effects(uid):
+                if effect.get("currency") == currency:
+                    total += effect.get("cpc", 0.0) * count
+        return total
 
     def effective_fpc(self) -> float:
         base = self.state.get("flesh_per_click", 1.0)
-        return base + self.compute_extra_fpc()
+        return base + self.compute_cpc(self.primary_currency)
 
     def on_filter_clicked(self, button, category_key):
-        """Switch upgrade filter and rebuild the visible upgrade list."""
         self.current_filter = category_key
         self.refresh_upgrades_ui()
-
-
 
     # ---------- DISCORD RPC ----------
 
@@ -427,7 +512,7 @@ class FleshClicker(Gtk.Window):
 
     def tick_rpc_update(self):
         if not self.rpc:
-            return True  # keep timer
+            return True
         now = time.time()
         if now - self.rpc_last_update < 10:
             return True
@@ -435,7 +520,7 @@ class FleshClicker(Gtk.Window):
         try:
             self.rpc.update(
                 state=f"{int(self.flesh)} flesh",
-                details=f"{self.compute_fps():.1f} flesh/sec",
+                details=f"{self.compute_cps('flesh'):.1f} flesh/sec",
                 large_image="flesh",
                 large_text="Flesh Clicker",
                 start=self.start_time,
@@ -447,40 +532,115 @@ class FleshClicker(Gtk.Window):
     # ---------- MOD LOADING ----------
 
     def load_mods(self):
-        """Load mods from both system-wide and per-user directories."""
-        for mods_dir in (SYSTEM_MODS_DIR, USER_MODS_DIR):
-            if not os.path.isdir(mods_dir):
+        """Load folder-based mods.
+
+        Each mod is a subfolder containing:
+            mod.py          — must define register(game)
+            manifest.json   — optional metadata (name, version, description)
+            assets/         — optional assets folder
+
+        Inside mod.py, MOD_DIR is pre-set to the mod's folder path so you can
+        reference assets like:  os.path.join(MOD_DIR, "assets", "custom.png")
+        """
+        for mods_root in (SYSTEM_MODS_DIR, USER_MODS_DIR):
+            if not os.path.isdir(mods_root):
                 continue
-            for fname in os.listdir(mods_dir):
-                if not fname.endswith(".py"):
+            for entry in sorted(os.listdir(mods_root)):
+                mod_dir = os.path.join(mods_root, entry)
+                if not os.path.isdir(mod_dir):
                     continue
-                path = os.path.join(mods_dir, fname)
+
+                mod_py = os.path.join(mod_dir, "mod.py")
+                if not os.path.exists(mod_py):
+                    continue
+
+                manifest = {}
+                manifest_path = os.path.join(mod_dir, "manifest.json")
+                if os.path.exists(manifest_path):
+                    try:
+                        with open(manifest_path, "r", encoding="utf-8") as f:
+                            manifest = json.load(f)
+                    except Exception:
+                        pass
+
                 try:
-                    loader = importlib.machinery.SourceFileLoader(fname, path)
-                    spec = importlib.util.spec_from_loader(loader.name, loader)
-                    mod = importlib.util.module_from_spec(spec)
+                    loader = importlib.machinery.SourceFileLoader(entry, mod_py)
+                    spec   = importlib.util.spec_from_loader(loader.name, loader)
+                    mod    = importlib.util.module_from_spec(spec)
+                    mod.MOD_DIR  = mod_dir
+                    mod.MANIFEST = manifest
                     loader.exec_module(mod)
                     if hasattr(mod, "register"):
                         mod.register(self)
-                except Exception:
-                    # silently ignore broken mods
-                    continue
-        # after mods, refresh UI
+                except Exception as e:
+                    print(f"[mods] Failed to load '{entry}': {e}")
+
         self.refresh_upgrades_ui()
         self.refresh_achievements_ui()
 
-    # helper for mods
+    # ---------- MOD API ----------
+
+    def register_currency(self, registry_name: str, display_name: str):
+        """Register a new currency. Safe to call if it already exists."""
+        if registry_name not in self.currencies:
+            self.currencies[registry_name] = {"display_name": display_name}
+        if registry_name not in self.state["currencies"]:
+            self.state["currencies"][registry_name] = 0.0
+
     def register_upgrade(self, uid: str, data: dict):
+        """Add or update an upgrade in the registry."""
         if uid in self.upgrades:
             self.upgrades[uid].update(data)
         else:
             self.upgrades[uid] = data
 
     def register_achievement(self, key: str, data: dict):
+        """Add or update an achievement."""
         if key in self.achievements:
             self.achievements[key].update(data)
         else:
             self.achievements[key] = data
+
+    def set_flesh_image(self, path: str):
+        """Override the clickable image. Call from register() before build_ui runs."""
+        self.flesh_image_path = path
+
+    def disable_vanilla_achievements(self):
+        """Remove all built-in achievements. Mod achievements registered after
+        this call are unaffected."""
+        for key in list(DEFAULT_ACHIEVEMENTS.keys()):
+            self.achievements.pop(key, None)
+
+    def disable_vanilla_upgrades(self):
+        """Remove all built-in upgrades. Mod upgrades registered after
+        this call are unaffected."""
+        for key in list(BASE_UPGRADES.keys()):
+            self.upgrades.pop(key, None)
+
+    def disable_vanilla(self, primary_currency: str):
+        """Remove all built-in upgrades, achievements, and the flesh currency,
+        and set a new primary currency.
+
+        Call this before registering your own currency/upgrades/achievements.
+        The primary_currency you pass must be registered with register_currency()
+        either before or after this call — it just needs to exist by the time
+        the UI is built.
+
+        Example:
+            def register(game):
+                game.register_currency("souls", "Souls")
+                game.disable_vanilla("souls")
+                game.register_upgrade("soul_harvester", { ... })
+        """
+        self.disable_vanilla_upgrades()
+        self.disable_vanilla_achievements()
+
+        # remove flesh from the currency registry and saved state
+        self.currencies.pop("flesh", None)
+        self.state["currencies"].pop("flesh", None)
+
+        # point the primary currency at the mod's replacement
+        self.primary_currency = primary_currency
 
     # ---------- UI BUILD ----------
 
@@ -489,14 +649,12 @@ class FleshClicker(Gtk.Window):
         root.set_wide_handle(True)
         self.set_child(root)
 
-        # LEFT: main click area
         left_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         left_box.set_margin_top(12)
         left_box.set_margin_bottom(12)
         left_box.set_margin_start(12)
         left_box.set_margin_end(6)
 
-        # picture placeholder
         self.picture = Gtk.Picture()
         self.picture.set_can_shrink(True)
         self.picture.set_content_fit(Gtk.ContentFit.CONTAIN)
@@ -509,22 +667,14 @@ class FleshClicker(Gtk.Window):
         self.picture.add_controller(click_gesture)
 
         left_box.append(self.picture)
-
-
         self.load_flesh_image()
 
-        # labels
-        self.flesh_label = Gtk.Label(xalign=0)
-        self.fps_label   = Gtk.Label(xalign=0)
-
-        stats_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        stats_box.append(self.flesh_label)
-        stats_box.append(self.fps_label)
-        left_box.append(stats_box)
+        # dynamic stats area — rebuilt every tick
+        self.stats_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        left_box.append(self.stats_box)
 
         root.set_start_child(left_box)
 
-        # RIGHT: notebook with tabs
         right_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         right_box.set_margin_top(12)
         right_box.set_margin_bottom(12)
@@ -534,22 +684,18 @@ class FleshClicker(Gtk.Window):
         self.notebook = Gtk.Notebook()
         right_box.append(self.notebook)
 
-        # Upgrades page
         self.upgrades_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.build_upgrades_page()
         self.notebook.append_page(self.upgrades_page, Gtk.Label(label="Upgrades"))
 
-        # Achievements page
         self.achievements_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.build_achievements_page()
         self.notebook.append_page(self.achievements_page, Gtk.Label(label="Achievements"))
 
-        # Leaderboard page
         self.leaderboard_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.build_leaderboard_page()
         self.notebook.append_page(self.leaderboard_page, Gtk.Label(label="Leaderboard"))
 
-        # Settings page
         self.settings_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.build_settings_page()
         self.notebook.append_page(self.settings_page, Gtk.Label(label="Settings"))
@@ -564,7 +710,6 @@ class FleshClicker(Gtk.Window):
         self.upgrades_page.set_margin_start(4)
         self.upgrades_page.set_margin_end(4)
 
-        # filter buttons
         filter_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         self.upgrade_filter_buttons = {}
 
@@ -574,14 +719,14 @@ class FleshClicker(Gtk.Window):
             self.upgrade_filter_buttons[key] = btn
             filter_box.append(btn)
 
-        make_filter_button("All", "all")
+        make_filter_button("All",   "all")
         make_filter_button("Click", "click")
-        make_filter_button("Auto", "auto")
+        make_filter_button("Auto",  "auto")
 
         self.upgrades_page.append(filter_box)
 
         self.upgrades_listbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        self.current_filter = "all"
+        self.current_filter   = "all"
         scroll = Gtk.ScrolledWindow()
         scroll.set_child(self.upgrades_listbox)
         scroll.set_vexpand(True)
@@ -607,10 +752,8 @@ class FleshClicker(Gtk.Window):
 
         grid = Gtk.Grid(column_spacing=8, row_spacing=8)
         self.settings_page.append(grid)
-
         row = 0
 
-        # RPC toggle
         rpc_label = Gtk.Label(label="Enable Discord RPC", xalign=0)
         grid.attach(rpc_label, 0, row, 1, 1)
         self.rpc_switch = Gtk.Switch()
@@ -619,7 +762,6 @@ class FleshClicker(Gtk.Window):
         grid.attach(self.rpc_switch, 1, row, 1, 1)
         row += 1
 
-        # RPC client ID
         id_label = Gtk.Label(label="Discord Client ID", xalign=0)
         grid.attach(id_label, 0, row, 1, 1)
         self.rpc_entry = Gtk.Entry()
@@ -628,7 +770,6 @@ class FleshClicker(Gtk.Window):
         grid.attach(self.rpc_entry, 1, row, 1, 1)
         row += 1
 
-        # Squish ms
         squish_label = Gtk.Label(label="Squish duration (ms)", xalign=0)
         grid.attach(squish_label, 0, row, 1, 1)
         self.squish_spin = Gtk.SpinButton.new_with_range(20, 300, 10)
@@ -637,23 +778,19 @@ class FleshClicker(Gtk.Window):
         grid.attach(self.squish_spin, 1, row, 1, 1)
         row += 1
 
-        # Click sound (future use)
         sound_label = Gtk.Label(label="Play click sound", xalign=0)
         grid.attach(sound_label, 0, row, 1, 1)
         self.sound_switch = Gtk.Switch()
         self.sound_switch.set_active(bool(self.settings.get("play_click_sound")))
         self.sound_switch.connect("notify::active", self.on_settings_changed)
         grid.attach(self.sound_switch, 1, row, 1, 1)
-
         row += 1
 
-        # Leaderboard: manual submit button
         leaderboard_button = Gtk.Button(label="Add leaderboard entry")
         leaderboard_button.connect("clicked", self.on_add_leaderboard_clicked)
         grid.attach(leaderboard_button, 0, row, 2, 1)
         row += 1
 
-        # status label for settings actions (e.g. leaderboard submit)
         self.settings_info_label = Gtk.Label(label="", xalign=0)
         self.settings_page.append(self.settings_info_label)
 
@@ -665,11 +802,10 @@ class FleshClicker(Gtk.Window):
         self.leaderboard_page.set_margin_start(4)
         self.leaderboard_page.set_margin_end(4)
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self.leaderboard_page.append(outer)
-
+        outer    = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         outer.append(controls)
+        self.leaderboard_page.append(outer)
 
         refresh_btn = Gtk.Button(label="Refresh leaderboard")
         refresh_btn.connect("clicked", self.on_refresh_leaderboard_clicked)
@@ -688,36 +824,28 @@ class FleshClicker(Gtk.Window):
         try:
             self.leaderboard_textview.set_monospace(True)
         except Exception:
-            # older gi bindings might not have set_monospace; ignore
             pass
         scrolled.set_child(self.leaderboard_textview)
-
-        # initial load
         self.load_leaderboard()
 
     def update_leaderboard_view(self, rows):
-        """Render rows (list of dicts) into the text view as a simple table."""
         buffer = self.leaderboard_textview.get_buffer()
         if not rows:
             buffer.set_text("No leaderboard entries yet.")
             return
-
-        header = f"{'Username':<20} {'Flesh':>10}  {'Timestamp':<32}\n"
-        line = "-" * 64 + "\n"
-        out_lines = [header, line]
+        header    = f"{'Username':<20} {'Flesh':>10}  {'Timestamp':<32}\n"
+        separator = "-" * 64 + "\n"
+        lines     = [header, separator]
         for row in rows:
             username = str(row.get("username") or "?")
-            flesh = row.get("flesh_amount")
-            if flesh is None:
-                flesh = row.get("flesh")
+            flesh    = row.get("flesh_amount") or row.get("flesh")
             try:
                 flesh_str = str(int(flesh))
             except Exception:
                 flesh_str = str(flesh)
             ts = row.get("last_update") or row.get("created_at") or ""
-            out_lines.append(f"{username:<20} {flesh_str:>10}  {ts:<32}\n")
-
-        buffer.set_text("".join(out_lines))
+            lines.append(f"{username:<20} {flesh_str:>10}  {ts:<32}\n")
+        buffer.set_text("".join(lines))
 
     def load_leaderboard(self):
         if not hasattr(self, "leaderboard_textview"):
@@ -735,36 +863,28 @@ class FleshClicker(Gtk.Window):
         self.load_leaderboard()
 
     def on_add_leaderboard_clicked(self, button):
-        """Settings → "Add leaderboard entry" button handler."""
-        username = get_default_username()
+        username     = get_default_username()
         flesh_amount = int(self.flesh)
-
         ok, info = submit_leaderboard_entry(username, flesh_amount)
         if ok:
             msg = f"Submitted leaderboard entry as '{username}' with {flesh_amount} flesh."
-            # try refreshing the leaderboard tab too
             if hasattr(self, "leaderboard_textview"):
                 self.load_leaderboard()
         else:
             msg = f"Failed to submit leaderboard entry: {info}"
-
         if hasattr(self, "settings_info_label"):
             self.settings_info_label.set_text(msg)
         else:
             print(msg)
 
     # ---------- IMAGE ----------
-    def load_flesh_image(self):
-        """Load the main flesh image (always flesh.png)."""
-        path = os.path.join(BASE_DIR, "flesh.png")
 
+    def load_flesh_image(self):
         try:
-            texture = Gdk.Texture.new_from_filename(path)
+            texture = Gdk.Texture.new_from_filename(self.flesh_image_path)
             self.picture.set_paintable(texture)
-            return
         except Exception as e:
-            print("Failed to load flesh.png:", e)
-            # Do nothing → picture stays empty
+            print(f"Failed to load image '{self.flesh_image_path}':", e)
 
     # ---------- UI HELPERS ----------
 
@@ -775,15 +895,67 @@ class FleshClicker(Gtk.Window):
             box.remove(child)
             child = nxt
 
+    def check_requires(self, uid: str) -> bool:
+        """Return True if all requirements for an upgrade are satisfied.
+
+        The ``requires`` field on an upgrade can be a single dict or a list
+        of dicts.  Each dict may contain:
+
+            upgrade  (str)  — another upgrade uid that must be owned
+            count    (int)  — minimum number of that upgrade owned (default 1)
+            currency (str)  — a currency registry name
+            amount   (float)— minimum amount of that currency required (default 0)
+
+        All conditions in a single dict must be satisfied (AND logic).
+        If ``requires`` is a list, *any* one dict being satisfied is enough
+        (OR logic between list items, AND within each item).
+
+        Example — require lignification AND at least 500 wood::
+
+            "requires": {"upgrade": "lignification", "currency": "wood", "amount": 500}
+
+        Example — require either sapwood OR heartwood::
+
+            "requires": [
+                {"upgrade": "sapwood"},
+                {"upgrade": "heartwood"},
+            ]
+        """
+        u = self.upgrades.get(uid)
+        if u is None:
+            return False
+        req = u.get("requires")
+        if req is None:
+            return True
+
+        # normalise to a list of condition-dicts
+        conditions = req if isinstance(req, list) else [req]
+
+        for cond in conditions:
+            ok = True
+            needed_upgrade  = cond.get("upgrade")
+            needed_count    = int(cond.get("count", 1))
+            needed_currency = cond.get("currency")
+            needed_amount   = float(cond.get("amount", 0))
+
+            if needed_upgrade is not None:
+                if self.get_upgrade_count(needed_upgrade) < needed_count:
+                    ok = False
+            if needed_currency is not None:
+                if self.get_currency(needed_currency) < needed_amount:
+                    ok = False
+
+            if ok:
+                return True  # at least one condition-set satisfied
+
+        return False
+
     def refresh_upgrades_ui(self):
         if not hasattr(self, "upgrades_listbox"):
             return
-
         self.clear_box_children(self.upgrades_listbox)
 
         selected_filter = getattr(self, "current_filter", "all")
-
-        # Make the currently selected filter button visually stand out.
         if hasattr(self, "upgrade_filter_buttons"):
             for key, btn in self.upgrade_filter_buttons.items():
                 if key == selected_filter:
@@ -793,10 +965,17 @@ class FleshClicker(Gtk.Window):
 
         for uid, u in self.upgrades.items():
             cat = u.get("category") or u.get("type") or "misc"
-
-            # "All" shows everything. "Click" and "Auto" only show matching upgrades.
             if selected_filter != "all" and cat != selected_filter:
                 continue
+
+            # hide upgrades whose requirements are not yet met
+            if not self.check_requires(uid):
+                continue
+
+            owned         = self.get_upgrade_count(uid)
+            cost          = self.get_upgrade_cost(uid, owned)
+            cost_currency = u.get("cost_currency", "flesh")
+            cost_display  = self.currencies.get(cost_currency, {}).get("display_name", cost_currency)
 
             row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
             row.add_css_class("upgrade-row")
@@ -807,12 +986,8 @@ class FleshClicker(Gtk.Window):
             name_label.set_xalign(0.0)
             top.append(name_label)
 
-            cost_label = Gtk.Label(
-                label=f"Cost: {int(self.get_upgrade_cost(uid, self.get_upgrade_count(uid)))} flesh",
-                xalign=1
-            )
+            cost_label = Gtk.Label(label=f"Cost: {int(cost)} {cost_display}", xalign=1)
             top.append(cost_label)
-
             row.append(top)
 
             desc_label = Gtk.Label(label=u["desc"], xalign=0)
@@ -828,77 +1003,76 @@ class FleshClicker(Gtk.Window):
     def refresh_achievements_ui(self):
         if not hasattr(self, "achievements_listbox"):
             return
-
         self.clear_box_children(self.achievements_listbox)
-
         for key, data in self.achievements.items():
-            row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-            row.add_css_class("achievement-row")
-
+            row      = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
             unlocked = data.get("unlocked", False)
-            name = data.get("name", key)
-            desc = data.get("desc", "")
-
-            name_label = Gtk.Label(label=name, xalign=0)
-            desc_label = Gtk.Label(label=desc, xalign=0)
+            row.add_css_class("achievement-row")
+            name_label = Gtk.Label(label=data.get("name", key), xalign=0)
+            desc_label = Gtk.Label(label=data.get("desc", ""),  xalign=0)
             desc_label.set_wrap(True)
-
-            if unlocked:
-                name_label.add_css_class("badge-unlocked")
-            else:
-                name_label.add_css_class("badge-locked")
-
+            name_label.add_css_class("badge-unlocked" if unlocked else "badge-locked")
             row.append(name_label)
             row.append(desc_label)
             self.achievements_listbox.append(row)
 
-
-
     # ---------- TIMER / GAME LOOP ----------
 
     def on_timer_tick(self):
-        # auto-flesh from upgrades
-        fps = self.compute_fps()
-        if fps > 0:
-            self.add_flesh(fps)
+        for reg_name in self.currencies:
+            cps = self.compute_cps(reg_name)
+            if cps > 0:
+                self.add_currency(reg_name, cps)
         self.update_labels()
-        return True  # keep timer
+        return True
 
     def update_labels(self):
-        self.flesh_label.set_text(f"Flesh: {int(self.flesh)}")
-        self.fps_label.set_text(f"Flesh per second: {self.compute_fps():.1f}")
+        if not hasattr(self, "stats_box"):
+            return
+        self.clear_box_children(self.stats_box)
+        for reg_name, cur_data in self.currencies.items():
+            amount = self.get_currency(reg_name)
+            # hide mod currencies until the player first obtains some
+            if amount <= 0 and reg_name != "flesh":
+                continue
+            display = cur_data.get("display_name", reg_name)
+            lbl = Gtk.Label(xalign=0)
+            lbl.set_text(f"{display}: {int(amount)}")
+            self.stats_box.append(lbl)
+            cps = self.compute_cps(reg_name)
+            if cps > 0:
+                cps_lbl = Gtk.Label(xalign=0)
+                cps_lbl.set_text(f"{display} per second: {cps:.1f}")
+                self.stats_box.append(cps_lbl)
 
     # ---------- UPGRADE LOGIC ----------
 
-    def get_upgrade_cost(self, uid: str, owned: int) -> float:
-        u = self.upgrades[uid]
-        base = u["base_cost"]
-        mult = u["cost_mult"]
-        return base * (mult ** owned)
-
     def on_buy_upgrade_clicked(self, button, uid: str):
-        owned = self.get_upgrade_count(uid)
-        cost = self.get_upgrade_cost(uid, owned)
-        if self.flesh < cost:
-            # not enough flesh
+        owned         = self.get_upgrade_count(uid)
+        cost          = self.get_upgrade_cost(uid, owned)
+        cost_currency = self.upgrades[uid].get("cost_currency", "flesh")
+
+        if self.get_currency(cost_currency) < cost:
             return
-        self.add_flesh(-cost)
+
+        self.add_currency(cost_currency, -cost)
         self.set_upgrade_count(uid, owned + 1)
 
-        # track first_upgrade / five_upgrades achievements
+        # one-time on_buy currency grants
+        for effect in self._get_effects(uid):
+            on_buy = effect.get("on_buy", 0.0)
+            if on_buy:
+                self.add_currency(effect["currency"], on_buy)
+
         total = self.total_upgrades_owned()
-        if total >= 1:
-            self.unlock_achievement("first_upgrade")
-        if total >= 5:
-            self.unlock_achievement("five_upgrades")
+        if total >= 1: self.unlock_achievement("first_upgrade")
+        if total >= 5: self.unlock_achievement("five_upgrades")
 
         self.refresh_upgrades_ui()
         self.update_labels()
 
-
     def play_squish(self):
         self.picture.remove_css_class("squish")
-
         duration = int(self.settings.get("squish_ms", 100))
 
         def do_squish():
@@ -913,33 +1087,28 @@ class FleshClicker(Gtk.Window):
     def on_click(self, gesture, n_press, x, y):
         self.play_squish()
 
-        # flesh gain logic
-        fpc = self.effective_fpc()
+        crit_count  = self.get_upgrade_count("crit_click")
+        crit_chance = 0.05 * crit_count if crit_count > 0 else 0.0
+        multiplier  = 2.0 if random.random() < crit_chance else 1.0
 
-        # simple crit from crit_click upgrade
-        crit_chance = 0.0
-        crit_upgrade_count = self.get_upgrade_count("crit_click")
-        if crit_upgrade_count > 0:
-            crit_chance = 0.05 * crit_upgrade_count  # 5% per level, just an example
-        if random.random() < crit_chance:
-            fpc *= 2.0
+        # primary currency uses base fpc + upgrade cpc; others use only upgrade cpc
+        for reg_name in self.currencies:
+            if reg_name == self.primary_currency:
+                gain = self.effective_fpc() * multiplier
+            else:
+                gain = self.compute_cpc(reg_name) * multiplier
+            if gain:
+                self.add_currency(reg_name, gain)
 
-        self.add_flesh(fpc)
         self.state["total_clicks"] += 1
         save_json(STATE_FILE, self.state)
 
-        # achievements
-        if self.state["total_clicks"] >= 1:
-            self.unlock_achievement("first_click")
-        if self.state["total_clicks"] >= 10:
-            self.unlock_achievement("ten_clicks")
-        if self.state["total_clicks"] >= 100:
-            self.unlock_achievement("hundred_clicks")
-
-        if self.flesh >= 100:
-            self.unlock_achievement("hundred_flesh")
-        if self.flesh >= 1000:
-            self.unlock_achievement("thousand_flesh")
+        clicks = self.state["total_clicks"]
+        if clicks >= 1:   self.unlock_achievement("first_click")
+        if clicks >= 10:  self.unlock_achievement("ten_clicks")
+        if clicks >= 100: self.unlock_achievement("hundred_clicks")
+        if self.flesh >= 100:  self.unlock_achievement("hundred_flesh")
+        if self.flesh >= 1000: self.unlock_achievement("thousand_flesh")
 
         self.update_labels()
 
@@ -955,17 +1124,16 @@ class FleshClicker(Gtk.Window):
     # ---------- SETTINGS ----------
 
     def on_settings_changed(self, *args):
-        self.settings["enable_rpc"] = self.rpc_switch.get_active()
+        self.settings["enable_rpc"]        = self.rpc_switch.get_active()
         self.settings["discord_client_id"] = self.rpc_entry.get_text().strip()
-        self.settings["squish_ms"] = int(self.squish_spin.get_value())
-        self.settings["play_click_sound"] = self.sound_switch.get_active()
+        self.settings["squish_ms"]         = int(self.squish_spin.get_value())
+        self.settings["play_click_sound"]  = self.sound_switch.get_active()
         save_json(SETTINGS_FILE, self.settings)
 
 
 class FleshApp(Gtk.Application):
     def __init__(self):
-        super().__init__(application_id=APP_ID,
-                         flags=Gio.ApplicationFlags.FLAGS_NONE)
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
         self.window = None
 
     def do_activate(self, *args):
