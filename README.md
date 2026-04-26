@@ -3,7 +3,6 @@ GTK4-based clicker game written in Python. Includes a bunch of stuff. I am too l
 
 This game is in **BETA**!!!!
 PLEASE WRITE ALL BUGS IN ISSUES
-WINDOWS PORT IS GONNA BE RELEASED SOON
 
 ## Run
 fleshfetch
